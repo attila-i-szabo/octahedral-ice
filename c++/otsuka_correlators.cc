@@ -1,6 +1,6 @@
 /* A program to measure correlation functions in idealised NN octahedral ice.
  *
- * Uses single-spin-flip dynamics at a number of decreasing temperature points.
+ * Uses loop-string dynamics (Otsuka, PRB 2014) at a number of decreasing temperature points.
  *
  * Cmdline arguments:
  *     1) system size
@@ -9,7 +9,7 @@
  *     4) random seed used for Monte-Carlo sampling
  *     5) input file listing a temperature point (in units of J) on each line
  *     6) output filename root
- *        filenames are of the form root_T[#T-point].corr 
+ *        filenames are of the form root/T[#T-point].corr 
  *
  * Copyright (C) 2022 Attila Szabó <attila.szabo@physics.ox.ac.uk>
  *
@@ -47,6 +47,11 @@ void print_line(const basic_stat& bs) {
     fflush(stdout);
 }
 
+void save_stat (const stat_0pi& bs, FILE* Efile, FILE* Mfile) {
+    fwrite(&(bs.E), sizeof(double), 1, Efile);
+    fwrite(bs.M, sizeof(int16_t), 24, Mfile);
+}
+
 int main (int argc, char** argv) {
     unsigned
         L = atoi(argv[1]),
@@ -67,6 +72,15 @@ int main (int argc, char** argv) {
     s.seed(seed);
     s.randomize();
 
+    // open output files
+    char outfn_buf[256];
+    sprintf(outfn_buf, "%s/samples", argv[11]);
+    FILE* f_samples = fopen(outfn_buf, "wb");
+    sprintf(outfn_buf, "%s/energy", argv[11]);
+    FILE* f_energy = fopen(outfn_buf, "wb");
+    sprintf(outfn_buf, "%s/magnet", argv[11]);
+    FILE* f_magnet = fopen(outfn_buf, "wb");
+
     // run the simulation
     FILE* Tpoints = fopen(argv[5], "r");
     int nT;
@@ -86,17 +100,26 @@ int main (int argc, char** argv) {
 
         long n_success = 0;
         double n_total = 3.0*L*L*L * sample;
-        basic_stat bs;
+        stat_0pi bs;
         for (int i = 0; i < sample; ++i) {
-            n_success += s.otsuka(T, true, &bs);
-            print_line(bs);
+            n_success += s.otsuka(T, true);
+            s.MC_record(bs);
+            save_stat(bs, f_energy, f_magnet);
         }
-        char outfn_buf[256];
         sprintf(outfn_buf, "%s/T%d.corr", argv[6], iT);
         s.save_corr(outfn_buf);
         printf("# %10.6f %12.10f # T, Acceptance\n\n", T, n_success/n_total);
+
+        s.save_config(f_samples);
+        fflush(f_samples);
+        fflush(f_energy);
+        fflush(f_magnet);
     }
     fclose(Tpoints);
+    
+    fclose(f_samples);
+    fclose(f_energy);
+    fclose(f_magnet);
 
     return 0;
 }
